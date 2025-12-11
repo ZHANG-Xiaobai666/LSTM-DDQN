@@ -28,6 +28,7 @@ class EnvRunner():
 
     def run(self):
 
+        self.load_model()
         start = time.time()
         for train_time in range(self.max_train_times):
 
@@ -134,4 +135,5 @@ class EnvRunner():
 
     def lstm_state_reset(self):
         for agent in range(self.num_agent):
+
             self.agents[agent].lstm_ret()
