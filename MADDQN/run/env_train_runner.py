@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from algorithms.agent import Agent
 import os
+import copy
 
 class EnvRunner():
     def __init__(self, args, env):
@@ -35,33 +36,21 @@ class EnvRunner():
                 self.update_eval_ddqn()
                 self.save_model()
 
+
             for episode in range(self.episodes):
 
                 self.env.reset()
                 self.lstm_state_reset()
-                actions_taken = [0 for _ in range(self.num_agent)]                        # initial action
-                nodes_feedbacks = [0 for _ in range(self.num_agent)]                     # initial feedback
+                obs_next = self.env.get_obs()
+                obs = copy.deepcopy(obs_next)
 
-                Q_values, _, actions_taken = self.collect(actions_taken, nodes_feedbacks)
-                nodes_feedbacks = self.env.step(actions_taken, 0)
+                for step in range(0, self.episode_length):
+                    Q_values, actions_taken = self.collect(obs)
 
-                for step in range(1, self.episode_length):
-                    pre_actions = actions_taken
-                    pre_nodes_feedbacks = nodes_feedbacks
-                    pre_Q_values = Q_values
+                    obs_next, rewards = self.env.step(actions_taken, step)
+                    self.push(Q_values, obs_next, rewards, step)   # push actual Q  and target Q into buffer
+                    obs = copy.deepcopy(obs_next)
 
-                    Q_values, Q_values_eval, actions_taken = self.collect(pre_actions, pre_nodes_feedbacks)
-
-                    nodes_feedbacks = self.env.step(actions_taken, step)
-
-                    self.push(pre_Q_values, Q_values_eval, pre_nodes_feedbacks) # push actual Q
-                        # and target Q
-                    # into buffer
-
-                pre_Q_values = Q_values
-                pre_nodes_feedbacks = nodes_feedbacks
-                _, Q_values_eval, _ = self.collect(pre_actions, pre_nodes_feedbacks)
-                self.push(pre_Q_values, Q_values_eval, pre_nodes_feedbacks)
             self.train()
             self.buffers = [[] for _ in range(self.num_agent)]
             self.update_par(train_time + 1, self.max_train_times)
@@ -74,37 +63,24 @@ class EnvRunner():
 
 
         end = time.time()
-    def collect(self, pre_actions, pre_nodes_feedback):
+    def collect(self, obs):
         actions_taken = []
         Q_values = []
-        Q_values_eval = []
         for agent in range(int(self.num_agent)):
-            Q, Q_eval, action_taken = self.agents[agent].select_action(pre_actions[agent], pre_nodes_feedback[agent])
-
+            Q, action_taken = self.agents[agent].select_action(obs[agent])
             actions_taken.append(action_taken)
             Q_values.append(Q)
-            Q_values_eval.append(Q_eval)
-        return Q_values, Q_values_eval, actions_taken
+        return Q_values, actions_taken
 
-    def push(self, act_Q_values, eval_Q_values, nodes_feedbacks):
-        
-        if self.reward_type == "sum_rate":
-            # if step == self.episode_length - 1:
-            #     ri = sum(self.env.get_sum_success())
-            # else:
-            #     ri = 0
-            ri = sum(self.env.get_sum_success())
-            r = [ri for _ in range(self.num_agent)]
-        elif self.reward_type == "proportional":
-            ri = np.dot(np.array(nodes_feedbacks), 1/(np.array(self.env.get_sum_success()) + 1e-8))
-            r = [ri for _ in range(self.num_agent)]
-        else:                     # self.reward_type == "competitive":
-            r = nodes_feedbacks
-        #ri = sum(np.array(nodes_feedbacks))
-        #r = [ri for _ in range(self.num_agent)]
-        for agent in range(self.num_agent):
-            target_Q = r[agent] + eval_Q_values[agent]
-            self.buffers[agent].append((act_Q_values[agent], target_Q))
+    def push(self, Q_values, obs_next, rewards, step):
+        if step == self.episode_length-1:
+            for agent in range(self.num_agent):
+                target_Q = torch.tensor(rewards[agent], dtype=torch.float32).view(1, 1, 1)
+                self.buffers[agent].append((Q_values[agent], target_Q))
+        else:
+            for agent in range(self.num_agent):
+                target_Q = rewards[agent] + self.agents[agent].eval_action(obs_next[agent])
+                self.buffers[agent].append((Q_values[agent], target_Q))
     def train(self):
         for agent in range(self.num_agent):
             self.agents[agent].train_mini_batch(self.buffers[agent])

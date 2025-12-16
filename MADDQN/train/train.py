@@ -25,7 +25,7 @@ parser.add_argument('--net_width', type=int, default=int(100), help='Hidden net 
 parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
 
 
-parser.add_argument('--reward_type', type=str, default="sum_rate", help='sum_rate / competitive / proportional')
+parser.add_argument('--reward_type', type=str, default="proportional", help='sum_rate / competitive / proportional')
 
 
 
@@ -36,7 +36,7 @@ def make_env(args, num_agent, num_channel, arr_pro):
 
 def main():
 
-    num_agent = int(3)
+    num_agent = int(4)
     num_channel = int(2)
     arr_pro = 1
 

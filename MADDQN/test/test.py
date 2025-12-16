@@ -36,7 +36,7 @@ def make_env(args, num_agent, num_channel, arr_pro):
 
 def main():
 
-    num_agent = int(3)
+    num_agent = int(4)
     num_channel = int(2)
     arr_pro = 1
 

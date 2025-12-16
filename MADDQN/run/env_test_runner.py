@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from algorithms.agent import Agent
 import os
-
+import copy
 class EnvRunner():
     def __init__(self, args, env):
         self.max_train_times = args.max_train_times
@@ -40,20 +40,15 @@ class EnvRunner():
 
                 self.env.reset()
                 self.lstm_state_reset()
-                actions_taken = [0 for _ in range(self.num_agent)]                        # initial action
-                nodes_feedbacks = [0 for _ in range(self.num_agent)]                     # initial feedback
+                obs = self.env.get_obs()
 
-                Q_values, _, actions_taken = self.collect(actions_taken, nodes_feedbacks)
-                nodes_feedbacks = self.env.step(actions_taken, 0)
+
 
                 for step in range(1, self.episode_length):
-                    pre_actions = actions_taken
-                    pre_nodes_feedbacks = nodes_feedbacks
-                    #pre_Q_values = Q_values
 
-                    Q_values, _, actions_taken = self.collect(pre_actions, pre_nodes_feedbacks, deterministic=True)
+                    actions_taken = self.collect(obs)
 
-                    nodes_feedbacks = self.env.step(actions_taken, step)
+                    obs, _ = self.env.step(actions_taken, step)
 
                     #elf.push(pre_Q_values, Q_values_eval, pre_nodes_feedbacks) # push actual Q
                         # and target Q
@@ -75,53 +70,19 @@ class EnvRunner():
 
 
         end = time.time()
-    def collect(self, pre_actions, pre_nodes_feedback, deterministic=False):
+
+    def collect(self, obs, deterministic=False):
         actions_taken = []
-        Q_values = []
-        Q_values_eval = []
-        for agent in range(int(self.num_agent)):
-            if deterministic==True:
-                Q, Q_eval, action_taken = self.agents[agent].select_action(pre_actions[agent], pre_nodes_feedback[
-                    agent],deterministic=True)
-            else:
-                Q, Q_eval, action_taken = self.agents[agent].select_action(pre_actions[agent], pre_nodes_feedback[
-                    agent],deterministic=False)
-            actions_taken.append(action_taken)
-            Q_values.append(Q)
-            Q_values_eval.append(Q_eval)
-        return Q_values, Q_values_eval, actions_taken
+        if deterministic:
+            for agent in range(int(self.num_agent)):
+                _, action_taken = self.agents[agent].select_action(obs[agent], deterministic=True)
+                actions_taken.append(action_taken)
+        else:
+            for agent in range(int(self.num_agent)):
+                _, action_taken = self.agents[agent].select_action(obs[agent])
+                actions_taken.append(action_taken)
+        return actions_taken
 
-    def push(self, act_Q_values, eval_Q_values, nodes_feedbacks):
-        
-        if self.reward_type == "sum_rate":
-            # if step == self.episode_length - 1:
-            #     ri = sum(self.env.get_sum_success())
-            # else:
-            #     ri = 0
-            ri = sum(self.env.get_sum_success())
-            r = [ri for _ in range(self.num_agent)]
-        elif self.reward_type == "proportional":
-            ri = np.dot(np.array(nodes_feedbacks), 1/(np.array(self.env.get_sum_success()) + 1e-8))
-            r = [ri for _ in range(self.num_agent)]
-        else:                     # self.reward_type == "competitive":
-            r = nodes_feedbacks
-        #ri = sum(np.array(nodes_feedbacks))
-        #r = [ri for _ in range(self.num_agent)]
-        for agent in range(self.num_agent):
-            target_Q = r[agent] + eval_Q_values[agent]
-            self.buffers[agent].append((act_Q_values[agent], target_Q))
-    def train(self):
-        for agent in range(self.num_agent):
-            self.agents[agent].train_mini_batch(self.buffers[agent])
-
-
-    def update_eval_ddqn(self):
-        for agent in range(self.num_agent):
-            self.agents[agent].deep_copy_ddqn()
-
-    def save_model(self):
-        for agent in range(self.num_agent):
-            self.agents[agent].save(os.path.join(self.save_dir, "agent" + str(agent) + ".pt"))
 
     def load_model(self):
         for agent in range(self.num_agent):
@@ -135,5 +96,4 @@ class EnvRunner():
 
     def lstm_state_reset(self):
         for agent in range(self.num_agent):
-
             self.agents[agent].lstm_ret()
